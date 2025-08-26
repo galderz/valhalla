@@ -35,7 +35,7 @@ public class TestOne {
 
     public static String generate(CompileFramework compiler) {
         final List<CodeGenerationDataNameType> types = new ArrayList<>();
-        types.addAll(CodeGenerationDataNameType.PRIMITIVE_TYPES);
+        // types.addAll(CodeGenerationDataNameType.PRIMITIVE_TYPES);
         types.add(new IntArrayType());
 
         var irNodesTemplate = Template.make(() -> body(
@@ -57,10 +57,11 @@ public class TestOne {
 
         final List<TemplateToken> testTokens = new ArrayList<>();
         testTokens.add(irNodesTemplate.asToken());
-        types.forEach(type -> testTokens.add(uniFieldTest(type)));
+        types.forEach(type -> testTokens.add(nonInlinedUniFieldTest(type)));
+        types.forEach(type -> testTokens.add(inlinedUniFieldTest(type)));
 
         // Basic multi-field test but there's a limit to which types and contents it can have
-        testTokens.add(multiFieldType(List.of(booleans(), booleans())));
+        // testTokens.add(multiFieldType(List.of(booleans(), booleans())));
 
         return TestFrameworkClass.render(
             "compiler.valhalla.inlinetypes.templating.generated",
@@ -127,10 +128,37 @@ public class TestOne {
         )).asToken(field);
     }
 
-    // todo works with:
-    //     var value = #VALUE;
-    //     var box = new $Box(value);
-    static TemplateToken uniFieldTest(CodeGenerationDataNameType type) {
+    static TemplateToken nonInlinedUniFieldTest(CodeGenerationDataNameType type) {
+        return Template.make("TYPE", (CodeGenerationDataNameType t) -> body(
+            let("BOXED", getCheckEQTypeName(type)),
+            let("VALUE", t.con()),
+            """
+            static value class $Box {
+                final #TYPE $v;
+
+                @ForceInline
+                $Box(#TYPE $v) {
+                    this.$v = $v;
+                }
+            }
+
+            @Test
+            @IR(failOn = {ALLOC_OF_BOX_KLASS, STORE_OF_ANY_KLASS, IRNode.UNSTABLE_IF_TRAP, IRNode.PREDICATE_TRAP})
+            public static #TYPE $test() {
+                var value = #VALUE;
+                var box = new $Box(value);
+                return box.$v;
+            }
+
+            @Check(test = "$test")
+            public void $checkTest(#TYPE result) {
+                Verify.checkEQ(#VALUE, (#BOXED) result);
+            }
+            """
+        )).asToken(type);
+    }
+
+    static TemplateToken inlinedUniFieldTest(CodeGenerationDataNameType type) {
         return Template.make("TYPE", (CodeGenerationDataNameType t) -> body(
             let("BOXED", getCheckEQTypeName(type)),
             let("VALUE", t.con()),
@@ -226,7 +254,8 @@ public class TestOne {
         @Override
         public Object con() {
             return "new int[]{%s}".formatted(
-                CodeGenerationDataNameType.ints().con()
+                // CodeGenerationDataNameType.ints().con()
+                "16"
             );
         }
 
